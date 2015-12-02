@@ -5,6 +5,9 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/Maxtors/surisoc"
 	"github.com/gorilla/mux"
@@ -15,6 +18,8 @@ var (
 	socketPath     string
 	session        *surisoc.SuricataSocket
 	bindingAddress string
+	signals        chan os.Signal
+	done           chan bool
 )
 
 func init() {
@@ -36,18 +41,41 @@ func init() {
 	if err != nil {
 		log.Fatalf("Error: %s\n", err.Error())
 	}
+
+	// Create channels
+	signals = make(chan os.Signal, 1)
+	done = make(chan bool, 1)
+
+	// Set up the signals to listen to, SIGQUIT is used internaly to stop
+	// the current process
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+
 	log.Println("Done initializing")
 }
 
 func main() {
 	defer session.Close()
 
-	// Create a new router with one simple endpoint
-	router := mux.NewRouter().StrictSlash(true)
-	router.Handle("/{command}/", logger(handleCommand, "handle-command"))
+	// Go-Routine to handle reciving of signals
+	go func() {
+		signal := <-signals
+		log.Printf("Recived signal: %s\n", signal)
+		done <- true
+	}()
 
-	// Start listening for requests
-	log.Printf("Started listening to requests [%s]", bindingAddress)
-	log.Fatal(http.ListenAndServe(bindingAddress, router))
+	// Go-Routine to handle the API functionality
+	go func() {
+		// Create a new router with one simple endpoint
+		router := mux.NewRouter().StrictSlash(true)
+		router.Handle("/{command}/", logger(handleCommand, "handle-command"))
+
+		// Start listening for requests
+		log.Printf("Started listening to requests [%s]", bindingAddress)
+		log.Println(http.ListenAndServe(bindingAddress, router))
+		signals <- syscall.SIGQUIT
+	}()
+
+	// Wait for a done signal
+	<-done
 	log.Println("Goodbye!")
 }
