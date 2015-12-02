@@ -45,7 +45,7 @@ func handleCommand(w http.ResponseWriter, r *http.Request) {
 
 	// Check if there are any arguments to parse
 	if len(r.URL.Query()) != 0 {
-		err := socketMessage.ParseArgumentsMap(r.URL.Query())
+		err := socketMessage.ParseArgumentsURLMap(r.URL.Query())
 		if err != nil {
 			internalServerError(w, fmt.Sprintf("Error: %s", err.Error()))
 			return
